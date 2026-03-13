@@ -1,48 +1,84 @@
+import { useEffect,useState } from "react"
+import { getContract } from "../abi/constract"
+
 export default function History(){
 
-  const txs=[
-    {hash:"0xabc",type:"Create",status:"Success"},
-    {hash:"0xdef",type:"Approve",status:"Pending"}
-  ]
+  const [history,setHistory] = useState([])
+
+  async function load(){
+
+    try{
+
+      const contract = await getContract()
+
+      const count = await contract.proposalCount()
+
+      let list=[]
+
+      for(let i=1;i<=Number(count);i++){
+
+        const p = await contract.getProposal(i)
+
+        list.push({
+          id:i,
+          title:p[1],
+          description:p[2],
+          yes:p[5].toString(),
+          no:p[6].toString()
+        })
+
+      }
+
+      setHistory(list)
+
+    }catch(err){
+      console.log(err)
+    }
+
+  }
+
+  useEffect(()=>{
+    load()
+  },[])
 
   return(
 
     <div>
 
       <h1 className="text-3xl mb-6 font-bold">
-        Transaction History
+        Voting History
       </h1>
 
-      <table className="w-full bg-gray-800 rounded">
+      {history.map(h=>(
 
-        <thead className="border-b border-gray-700">
+        <div
+          key={h.id}
+          className="bg-gray-800 p-4 mb-3 rounded"
+        >
 
-          <tr>
-            <th className="p-3">Tx Hash</th>
-            <th className="p-3">Type</th>
-            <th className="p-3">Status</th>
-          </tr>
+          <p className="font-bold text-lg">
+            Proposal #{h.id}
+          </p>
 
-        </thead>
+          <p className="text-yellow-400 font-semibold mt-1">
+            {h.title}
+          </p>
 
-        <tbody>
+          <p className="text-gray-400 mt-1">
+            {h.description}
+          </p>
 
-          {txs.map((tx,i)=>(
-            <tr key={i} className="text-center">
+          <div className="mt-3">
 
-              <td className="p-3">{tx.hash}</td>
-              <td className="p-3">{tx.type}</td>
-              <td className="p-3">{tx.status}</td>
+            <p> YES: {h.yes}</p>
+            <p> NO: {h.no}</p>
 
-            </tr>
-          ))}
+          </div>
 
-        </tbody>
+        </div>
 
-      </table>
+      ))}
 
     </div>
-
   )
-
 }

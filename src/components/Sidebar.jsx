@@ -9,7 +9,8 @@ export default function Sidebar() {
     { name: "Create Transaction", path: "/create" },
     { name: "Transaction History", path: "/history" },
     { name: "Multisig Wallet", path: "/multisig" },
-    { name: "Profile", path: "/profile" }
+    { name: "Profile", path: "/profile" },
+    { name: "Vote", path: "/vote" }
   ]
 
   return (

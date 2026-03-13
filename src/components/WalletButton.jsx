@@ -1,34 +1,36 @@
 import { useState } from "react"
+import { connectWallet } from "../abi/constract"
 
-export default function WalletButton() {
+export default function WalletButton(){
 
-  const [wallet, setWallet] = useState(null)
+  const [account,setAccount] = useState("")
 
-  async function connectWallet() {
+  async function connect(){
 
-    if (window.ethereum) {
+    try{
 
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts"
-      })
+      const addr = await connectWallet()
 
-      setWallet(accounts[0])
+      setAccount(addr)
 
-    } else {
-
-      alert("Please install MetaMask")
-
+    }catch(err){
+      console.log(err)
     }
+
   }
 
-  return (
+  return(
+
     <button
-      onClick={connectWallet}
-      className="bg-blue-600 px-4 py-2 rounded-lg"
+    onClick={connect}
+    className="bg-green-600 px-4 py-2 rounded"
     >
-      {wallet
-        ? wallet.slice(0,6) + "..." + wallet.slice(-4)
+
+      {account
+        ? account.slice(0,6)+"..."+account.slice(-4)
         : "Connect Wallet"}
+
     </button>
+
   )
 }
