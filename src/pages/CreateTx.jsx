@@ -1,54 +1,60 @@
 import { useState } from "react"
 import { ethers } from "ethers"
-import { getContract } from "../abi/constract"
+import { getEVoteContract } from "../config/evote"
 
 export default function CreateTx(){
 
   const [title,setTitle] = useState("")
   const [description,setDescription] = useState("")
+  const [recipient,setRecipient] = useState("")
   const [amount,setAmount] = useState("")
-  const [endTime,setEndTime] = useState("")
+  const [deadline,setDeadline] = useState("")
 
-  async function submit(){
+  const inputStyle = {
+    width:"100%",
+    marginBottom:"15px",
+    padding:"12px",
+    borderRadius:"8px",
+    border:"1px solid #1e293b",
+    background:"#020617",
+    color:"#e2e8f0",
+    outline:"none"
+  }
+
+  async function createProposal(){
+
+    if(!title || !description || !recipient || !deadline || !amount){
+      alert("Missing fields")
+      return
+    }
+
+    if(!ethers.isAddress(recipient)){
+      alert("Invalid recipient address")
+      return
+    }
+
+    if(Number(amount) <= 0){
+      alert("Amount must be greater than 0")
+      return
+    }
 
     try{
 
-      if(!title || !description){
-        alert("Please enter title and description")
-        return
-      }
+      const contract = await getEVoteContract()
 
-      if(!amount){
-        alert("Enter amount")
-        return
-      }
+      // convert datetime-local -> duration
+      const deadlineTimestamp = Math.floor(
+        new Date(deadline).getTime()/1000
+      )
 
-      if(!endTime){
-        alert("Select voting end time")
-        return
-      }
+      const now = Math.floor(Date.now()/1000)
 
-      // thời gian hiện tại
-      const now = Math.floor(Date.now() / 1000)
-
-      // thời gian user chọn
-      const endTimestamp = Math.floor(new Date(endTime).getTime() / 1000)
-
-      // duration contract cần
-      const duration = endTimestamp - now
+      const duration = deadlineTimestamp - now
 
       if(duration <= 0){
-        alert("End time must be in the future")
+        alert("Deadline must be in the future")
         return
       }
-
-      const accounts = await window.ethereum.request({
-        method:"eth_accounts"
-      })
-
-      const recipient = accounts[0]
-
-      const contract = await getContract()
 
       const value = ethers.parseEther(amount)
 
@@ -62,17 +68,18 @@ export default function CreateTx(){
 
       await tx.wait()
 
-      alert("Proposal created successfully")
+      alert("Proposal created")
 
       setTitle("")
       setDescription("")
+      setRecipient("")
       setAmount("")
-      setEndTime("")
+      setDeadline("")
 
     }catch(err){
 
       console.error(err)
-      alert("Transaction failed")
+      alert(err.reason || "Transaction failed")
 
     }
 
@@ -80,55 +87,67 @@ export default function CreateTx(){
 
   return(
 
-    <div className="max-w-xl">
+    <div style={{padding:"40px",maxWidth:"600px"}}>
 
-      <h1 className="text-3xl mb-6 font-bold">
-        Tạo Proposal Mới
-      </h1>
+      <h2 style={{marginBottom:"20px"}}>Create Proposal</h2>
 
-      <div className="flex flex-col gap-4">
+      <input
+        placeholder="Title"
+        value={title}
+        onChange={(e)=>setTitle(e.target.value)}
+        style={inputStyle}
+      />
 
-        <input
-          placeholder="Tiêu đề"
-          className="bg-gray-800 p-3 rounded"
-          value={title}
-          onChange={(e)=>setTitle(e.target.value)}
-        />
+      <textarea
+        placeholder="Description"
+        value={description}
+        onChange={(e)=>setDescription(e.target.value)}
+        style={inputStyle}
+      />
 
-        <textarea
-          placeholder="chi tiết"
-          className="bg-gray-800 p-3 rounded"
-          value={description}
-          onChange={(e)=>setDescription(e.target.value)}
-        />
+      <input
+        placeholder="Recipient Address"
+        value={recipient}
+        onChange={(e)=>setRecipient(e.target.value)}
+        style={inputStyle}
+      />
 
-        <input
-          placeholder="Giá ETH (nếu có)"
-          className="bg-gray-800 p-3 rounded"
-          value={amount}
-          onChange={(e)=>setAmount(e.target.value)}
-        />
+      <input
+        placeholder="Amount (ETH)"
+        value={amount}
+        onChange={(e)=>setAmount(e.target.value)}
+        style={inputStyle}
+      />
 
-        <label className="text-gray-400">
-          Thời gian kết thúc voting
-        </label>
+      <label style={{display:"block",marginBottom:"6px"}}>
+        Voting Deadline
+      </label>
 
-        <input
-          type="datetime-local"
-          className="bg-gray-800 p-3 rounded"
-          value={endTime}
-          onChange={(e)=>setEndTime(e.target.value)}
-        />
+      <input
+        type="datetime-local"
+        value={deadline}
+        onChange={(e)=>setDeadline(e.target.value)}
+        style={inputStyle}
+      />
 
-        <button
-          onClick={submit}
-          className="bg-blue-600 hover:bg-blue-500 p-3 rounded"
-        >
-          Tạo Proposal
-        </button>
-
-      </div>
+      <button
+        onClick={createProposal}
+        style={{
+          width:"100%",
+          padding:"14px",
+          background:"#2563eb",
+          color:"#fff",
+          border:"none",
+          borderRadius:"10px",
+          cursor:"pointer",
+          fontWeight:"600"
+        }}
+      >
+        Create Proposal
+      </button>
 
     </div>
+
   )
+
 }

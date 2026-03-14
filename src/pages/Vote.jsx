@@ -1,293 +1,194 @@
-import { useState, useEffect } from "react"
-import { ethers } from "ethers"
-import { getContract } from "../abi/constract"
-import WalletButton from "../components/WalletButton"
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/purity */
+/* eslint-disable react-hooks/immutability */
+import { useEffect,useState } from "react"
+import { getEVoteContract } from "../config/evote"
 
-export default function Vote() {
+export default function Vote(){
 
-  const [proposalId, setProposalId] = useState("")
-  const [support, setSupport] = useState(true)
-  const [proposals, setProposals] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [account, setAccount] = useState("")
+  const [proposals,setProposals] = useState([])
+  const [admin,setAdmin] = useState("")
+  const [account,setAccount] = useState("")
 
-  async function loadProposals() {
+  useEffect(()=>{
+    load()
+  },[])
 
-    try {
+  async function load(){
 
-      const contract = await getContract()
-      const count = await contract.proposalCount()
+    const contract = await getEVoteContract()
 
-      let list = []
+    const signer = await contract.runner.getAddress()
+    setAccount(signer.toLowerCase())
 
-      for (let i = 1; i <= Number(count); i++) {
+    const adminAddr = await contract.admin()
+    setAdmin(adminAddr.toLowerCase())
 
-        const p = await contract.getProposal(i)
+    const count = Number(await contract.proposalCount())
 
-        list.push({
-          id: i,
-          title: p[1],
-          description: p[2],
-          amount: ethers.formatEther(p[3]),
-          recipient: p[4],
-          yesVotes: p[5].toString(),
-          noVotes: p[6].toString(),
-          deadline: Number(p[7]),
-          finalized: p[8]
-        })
-      }
+    const list = []
 
-      setProposals(list)
+    for(let i=1;i<=count;i++){
 
-    } catch (err) {
+      const p = await contract.getProposal(i)
 
-      console.error("Error loading proposals:", err)
+      list.push({
+        id:Number(p[0]),
+        title:p[1],
+        description:p[2],
+        amount:Number(p[3]),
+        recipient:p[4],
+        yes:Number(p[5]),
+        no:Number(p[6]),
+        deadline:Number(p[7]),
+        finalized:p[8]
+      })
 
     }
+
+    setProposals(list)
 
   }
 
-  async function vote() {
+  async function vote(id,value){
 
-    if (!proposalId) {
-      alert("Please enter proposal ID")
-      return
-    }
+    const contract = await getEVoteContract()
 
-    setLoading(true)
+    const tx = await contract.vote(id,value)
 
-    try {
+    await tx.wait()
 
-      const contract = await getContract()
-
-      const signer = await contract.runner.getAddress()
-
-      const hasVoted = await contract.hasVoted(proposalId, signer)
-
-      if (hasVoted) {
-
-        alert("You already voted")
-
-        setLoading(false)
-
-        return
-      }
-
-      const tx = await contract.vote(proposalId, support)
-
-      await tx.wait()
-
-      alert(`Voted ${support ? "YES" : "NO"} on proposal #${proposalId}`)
-
-      await loadProposals()
-
-      setProposalId("")
-
-    } catch (err) {
-
-      console.error(err)
-
-      alert("Vote failed: " + (err.reason || err.message))
-
-    }
-
-    setLoading(false)
+    load()
 
   }
 
-  // vote trực tiếp từ danh sách proposal
-  async function voteDirect(id, support) {
+  async function finalize(id){
 
-    try {
+    const contract = await getEVoteContract()
 
-      const contract = await getContract()
+    const tx = await contract.finalizeProposal(id)
 
-      const tx = await contract.vote(id, support)
+    await tx.wait()
 
-      await tx.wait()
-
-      alert(`Voted ${support ? "YES" : "NO"} on proposal #${id}`)
-
-      loadProposals()
-
-    } catch (err) {
-
-      alert(err.reason || err.message)
-
-    }
+    load()
 
   }
 
-  useEffect(() => {
+  return(
 
-    loadProposals()
+    <div style={{padding:"30px"}}>
 
-    if (window.ethereum) {
+      <h2>Vote Proposals</h2>
 
-      window.ethereum.request({ method: "eth_accounts" })
+      {proposals.map(p=>{
 
-        .then(accounts => {
+        const total = p.yes + p.no
 
-          if (accounts.length > 0) setAccount(accounts[0])
+        const yesPercent = total ? ((p.yes/total)*100).toFixed(1) : 0
+        const noPercent = total ? ((p.no/total)*100).toFixed(1) : 0
 
-        })
+        const isAdmin = account === admin
 
-    }
+        const now = Date.now()/1000
+        const ended = now > p.deadline
 
-  }, [])
+        const deadlineText = new Date(
+          p.deadline*1000
+        ).toLocaleString()
 
-  const now = Math.floor(Date.now() / 1000)
-
-  const activeProposals = proposals.filter(p => !p.finalized && p.deadline > now)
-
-  return (
-
-    <div className="max-w-6xl mx-auto p-6">
-
-      <div className="flex justify-between items-center mb-8">
-
-        <h1 className="text-3xl font-bold">Vote on Proposals</h1>
-
-        <WalletButton account={account} setAccount={setAccount} />
-
-      </div>
-
-
-      {/* vote bằng ID */}
-      <div className="bg-gray-800 p-6 rounded-lg mb-8">
-
-        <h2 className="text-xl font-bold mb-4">Cast Your Vote</h2>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-
-          <input
-            type="number"
-            placeholder="Proposal ID"
-            className="bg-gray-700 p-3 rounded"
-            value={proposalId}
-            onChange={(e) => setProposalId(e.target.value)}
-          />
-
-          <div className="flex gap-4 items-center">
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={support === true}
-                onChange={() => setSupport(true)}
-              />
-              YES
-            </label>
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={support === false}
-                onChange={() => setSupport(false)}
-              />
-              NO
-            </label>
-
-          </div>
-
-        </div>
-
-        <button
-          onClick={vote}
-          disabled={loading || !account}
-          className="bg-blue-600 p-3 rounded w-full"
-        >
-
-          {loading ? "Voting..." : "Submit Vote"}
-
-        </button>
-
-      </div>
-
-
-      {/* Active Proposals */}
-
-      <h2 className="text-2xl font-bold mb-4">
-
-        Active Proposals
-
-      </h2>
-
-
-      <div className="space-y-4">
-
-        {activeProposals.map(p => (
+        return(
 
           <div
             key={p.id}
-            className="bg-gray-800 p-5 rounded-lg border border-gray-700"
+            style={{
+              background:"#0f172a",
+              padding:"25px",
+              marginBottom:"25px",
+              borderRadius:"12px",
+              border:"1px solid #1e293b",
+              maxWidth:"600px"
+            }}
           >
 
-            <h3 className="text-xl font-bold">
+            <h3>{p.title}</h3>
 
-              #{p.id} {p.title}
+            <p>{p.description}</p>
 
-            </h3>
+            <p><b>Recipient:</b> {p.recipient}</p>
 
-            <p className="text-gray-400 mt-2">
+            <p><b>Amount:</b> {p.amount}</p>
 
-              {p.description}
+            <p><b>Deadline:</b> {deadlineText}</p>
 
-            </p>
+            <p><b>YES:</b> {p.yes}</p>
+            <p><b>NO:</b> {p.no}</p>
 
-            <div className="mt-3 text-sm">
+            {!p.finalized && !ended && (
 
-              <p> YES: {p.yesVotes}</p>
+              <div>
 
-              <p> NO: {p.noVotes}</p>
+                <button
+                  onClick={()=>vote(p.id,true)}
+                  style={{
+                    marginRight:"10px",
+                    padding:"10px",
+                    background:"#22c55e",
+                    border:"none",
+                    borderRadius:"6px"
+                  }}
+                >
+                  Vote YES
+                </button>
 
-              <p>
+                <button
+                  onClick={()=>vote(p.id,false)}
+                  style={{
+                    padding:"10px",
+                    background:"#ef4444",
+                    border:"none",
+                    borderRadius:"6px"
+                  }}
+                >
+                  Vote NO
+                </button>
 
-                Deadline:
+              </div>
 
-                {new Date(p.deadline * 1000).toLocaleString()}
+            )}
 
+            {isAdmin && !p.finalized && (
+
+              <button
+                onClick={()=>finalize(p.id)}
+                style={{
+                  marginTop:"15px",
+                  padding:"10px 18px",
+                  background:"#6366f1",
+                  border:"none",
+                  borderRadius:"6px"
+                }}
+              >
+                FINALIZE
+              </button>
+
+            )}
+
+            {p.finalized && (
+
+              <p style={{
+                color:"#22c55e",
+                marginTop:"10px"
+              }}>
+                Proposal Finalized
               </p>
 
-            </div>
-
-            <div className="flex gap-3 mt-4">
-
-              <button
-                onClick={() => voteDirect(p.id, true)}
-                className="bg-green-500 px-3 py-1 rounded"
-              >
-
-                Vote YES
-
-              </button>
-
-              <button
-                onClick={() => voteDirect(p.id, false)}
-                className="bg-red-500 px-3 py-1 rounded"
-              >
-
-                Vote NO
-
-              </button>
-
-            </div>
+            )}
 
           </div>
 
-        ))}
+        )
 
-        {activeProposals.length === 0 && (
-
-          <p className="text-gray-500 text-center py-8">
-
-            No active proposals
-
-          </p>
-
-        )}
-
-      </div>
+      })}
 
     </div>
 

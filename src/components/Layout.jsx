@@ -1,9 +1,9 @@
 import Navbar from "./Navbar"
-import Sidebar from "./SideBar"
+import Sidebar from "./Sidebar"
 
 export default function Layout({ children }) {
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-white">
+    <div className="flex min-h-screen w-screen bg-slate-950 text-white">
 
       <Sidebar />
 

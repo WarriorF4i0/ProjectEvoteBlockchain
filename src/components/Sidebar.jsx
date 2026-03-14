@@ -1,46 +1,106 @@
-import { Link, useLocation } from "react-router-dom"
+/* eslint-disable react-hooks/immutability */
+import { useEffect,useState } from "react"
+import { Link,useLocation } from "react-router-dom"
+import { ADMIN_ADDRESS } from "../config/admin"
 
-export default function Sidebar() {
+export default function Sidebar(){
 
-  const location = useLocation()
+const location = useLocation()
 
-  const menu = [
-    { name: "Dashboard", path: "/" },
-    { name: "Create Transaction", path: "/create" },
-    { name: "Transaction History", path: "/history" },
-    { name: "Multisig Wallet", path: "/multisig" },
-    { name: "Profile", path: "/profile" },
-    { name: "Vote", path: "/vote" }
-  ]
+// eslint-disable-next-line no-unused-vars
+const [account,setAccount] = useState("")
+const [isAdmin,setIsAdmin] = useState(false)
 
-  return (
-    <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+useEffect(()=>{
 
-      <div className="p-6 text-xl font-bold text-white border-b border-slate-800">
-        Blockchain dApp
-      </div>
+checkWallet()
 
-      <div className="flex flex-col p-3 gap-2">
+if(window.ethereum){
+window.ethereum.on("accountsChanged",()=>{
+checkWallet()
+})
+}
 
-        {menu.map((item) => (
+},[])
 
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`p-3 rounded-lg transition border-l-4
-            ${
-              location.pathname === item.path
-                ? "border-blue-500 bg-blue-600 text-white font-bold text-lg"
-                : "border-transparent text-gray-400 hover:bg-slate-800 hover:text-emerald-400 focus:text-emerald-400"
-            }`}
-          > 
-            {item.name}
-          </Link>
+async function checkWallet(){
 
-        ))}
+if(!window.ethereum) return
 
-      </div>
+const accounts = await window.ethereum.request({
+method:"eth_accounts"
+})
 
-    </div>
-  )
+if(accounts.length>0){
+
+setAccount(accounts[0])
+
+if(accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()){
+setIsAdmin(true)
+}else{
+setIsAdmin(false)
+}
+
+}
+
+}
+
+const menu = [
+
+{ name:"Dashboard", path:"/" },
+{ name:"Vote", path:"/vote" },
+{ name:"Multisig", path:"/multisig" },
+
+]
+
+// admin only
+if(isAdmin){
+menu.push({ name:"Create", path:"/create" })
+}
+
+menu.push({ name:"Profile", path:"/profile" })
+
+return(
+
+<div className="w-60 bg-slate-900 min-h-screen p-4">
+
+<h1 className="text-xl font-bold mb-6">
+E-Vote DAO
+</h1>
+
+<ul className="flex flex-col gap-2">
+
+{menu.map((item)=>{
+
+const active = location.pathname === item.path
+
+return(
+
+<Link key={item.path} to={item.path}>
+
+<li className={`p-3 rounded-lg transition border-l-4
+
+${active
+? "bg-blue-600 border-blue-300"
+: "border-transparent hover:bg-slate-800"
+}`}
+
+>
+
+{item.name}
+
+</li>
+
+</Link>
+
+)
+
+})}
+
+</ul>
+
+</div>
+
+)
+
 }
