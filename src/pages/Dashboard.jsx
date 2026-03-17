@@ -1,6 +1,10 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react"
-import { getEVoteContract } from "../config/evote"
+import { useWeb3 } from "../web3/useWeb3"
+import { getEVoteContractWithSigner } from "../contracts/evote"
+import { useToast } from "../components/Toaster"
+import { sendTx } from "../web3/tx"
+import { Skeleton } from "../components/Skeleton"
 
 import {
   Chart as ChartJS,
@@ -26,14 +30,20 @@ ChartJS.register(
 export default function Dashboard(){
 
   const [proposals,setProposals] = useState([])
-  const [wallet] = useState(()=>localStorage.getItem("wallet"))
+  const { signer, account } = useWeb3()
   const [openChart,setOpenChart] = useState(null)
+  const toast = useToast()
+  const [txBusy,setTxBusy] = useState(null)
+  const [loading,setLoading] = useState(true)
+  const [error,setError] = useState("")
 
   async function loadProposals(){
 
     try{
 
-      const contract = await getEVoteContract()
+      setError("")
+      setLoading(true)
+      const contract = getEVoteContractWithSigner(signer)
 
       const count = await contract.proposalCount()
 
@@ -103,39 +113,48 @@ export default function Dashboard(){
     }catch(err){
 
       console.error(err)
+      setError(err?.shortMessage || err?.message || "Failed to load proposals")
+      setProposals([])
 
+    }finally{
+      setLoading(false)
     }
 
   }
 
   useEffect(()=>{
 
+    if(!signer) return
     loadProposals()
 
     const interval = setInterval(loadProposals,5000)
 
     return ()=>clearInterval(interval)
 
-  },[])
+  },[signer])
 
 
 
   async function voteYes(id){
 
-    if(!wallet){
+    if(!account){
       alert("Connect wallet")
       return
     }
 
     try{
 
-      const contract = await getEVoteContract()
+      const contract = getEVoteContractWithSigner(signer)
 
-      const tx = await contract.vote(id,true)
-
-      await tx.wait()
-
-      loadProposals()
+      setTxBusy(`vote_yes_${id}`)
+      const res = await sendTx(
+        ()=>contract.vote(id,true),
+        { toast, title:"Vote YES" }
+      )
+      setTxBusy(null)
+      if(res.status === "success"){
+        loadProposals()
+      }
 
     }catch(err){
 
@@ -150,20 +169,24 @@ export default function Dashboard(){
 
   async function voteNo(id){
 
-    if(!wallet){
+    if(!account){
       alert("Connect wallet")
       return
     }
 
     try{
 
-      const contract = await getEVoteContract()
+      const contract = getEVoteContractWithSigner(signer)
 
-      const tx = await contract.vote(id,false)
-
-      await tx.wait()
-
-      loadProposals()
+      setTxBusy(`vote_no_${id}`)
+      const res = await sendTx(
+        ()=>contract.vote(id,false),
+        { toast, title:"Vote NO" }
+      )
+      setTxBusy(null)
+      if(res.status === "success"){
+        loadProposals()
+      }
 
     }catch(err){
 
@@ -180,13 +203,17 @@ export default function Dashboard(){
 
     try{
 
-      const contract = await getEVoteContract()
+      const contract = getEVoteContractWithSigner(signer)
 
-      const tx = await contract.finalizeProposal(id)
-
-      await tx.wait()
-
-      loadProposals()
+      setTxBusy(`finalize_${id}`)
+      const res = await sendTx(
+        ()=>contract.finalizeProposal(id),
+        { toast, title:"Finalize proposal" }
+      )
+      setTxBusy(null)
+      if(res.status === "success"){
+        loadProposals()
+      }
 
     }catch(err){
 
@@ -223,14 +250,56 @@ export default function Dashboard(){
 
   return(
 
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+    <div className="w-full">
 
-      <h1 className="text-3xl mb-8 font-bold">
-        DAO Voting Dashboard
-      </h1>
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
+        <div>
+          <h1 className="text-3xl font-bold">DAO Voting Dashboard</h1>
+          <p className="text-slate-400 mt-1">
+            Overview of proposals and live results.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" onClick={loadProposals} disabled={!signer || loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
 
-      {proposals.length === 0 && (
-        <p>No proposals yet</p>
+      {error && (
+        <div className="card mb-6">
+          <div className="card-inner">
+            <p className="text-rose-300 font-semibold">Could not load proposals</p>
+            <p className="text-slate-300 mt-1 text-sm break-words">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {loading && proposals.length === 0 && (
+        <div className="grid grid-cols-1 gap-6">
+          <div className="card"><div className="card-inner space-y-3">
+            <Skeleton className="h-6 w-1/2" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-10 w-52 mt-2" />
+          </div></div>
+          <div className="card"><div className="card-inner space-y-3">
+            <Skeleton className="h-6 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-10 w-44 mt-2" />
+          </div></div>
+        </div>
+      )}
+
+      {!loading && proposals.length === 0 && !error && (
+        <div className="card">
+          <div className="card-inner">
+            <p className="text-slate-300">No proposals yet.</p>
+            <p className="text-slate-400 text-sm mt-1">
+              If you are admin, create one; otherwise head to Vote when proposals appear.
+            </p>
+          </div>
+        </div>
       )}
 
       {proposals.map(p=>{
@@ -314,8 +383,9 @@ export default function Dashboard(){
 
           <div
           key={p.id}
-          className="bg-gray-800 p-6 mb-6 rounded-xl"
+          className="card mb-6"
           >
+            <div className="card-inner">
 
             <p className="font-bold text-xl">
               {p.title}
@@ -383,7 +453,7 @@ export default function Dashboard(){
 
             <button
             onClick={()=>toggleChart(p.id)}
-            className="mt-4 bg-blue-500 px-3 py-1 rounded hover:bg-blue-600"
+            className="mt-4 btn-primary"
             >
               View Results {openChart === p.id ? "▲" : "▼"}
             </button>
@@ -408,20 +478,22 @@ export default function Dashboard(){
 
 
 
-            {p.result === "ACTIVE" && wallet && (
+            {p.result === "ACTIVE" && account && (
 
               <div className="flex gap-4 mt-6">
 
                 <button
                 onClick={()=>voteYes(p.id)}
-                className="bg-green-500 px-4 py-2 rounded hover:bg-green-600"
+                className="btn-success"
+                disabled={txBusy != null}
                 >
                   Vote YES
                 </button>
 
                 <button
                 onClick={()=>voteNo(p.id)}
-                className="bg-red-500 px-4 py-2 rounded hover:bg-red-600"
+                className="btn-danger"
+                disabled={txBusy != null}
                 >
                   Vote NO
                 </button>
@@ -436,12 +508,15 @@ export default function Dashboard(){
 
               <button
               onClick={()=>finalize(p.id)}
-              className="mt-6 bg-purple-500 px-4 py-2 rounded hover:bg-purple-600"
+              className="mt-6 btn-purple"
+              disabled={txBusy != null}
               >
                 Finalize
               </button>
 
             )}
+
+            </div>
 
           </div>
 

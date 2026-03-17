@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 
 import Layout from "./components/Layout"
+import { ToasterProvider } from "./components/Toaster"
+import RequireWallet from "./routes/RequireWallet"
 
 import Dashboard from "./pages/Dashboard"
 import CreateTx from "./pages/CreateTx"
@@ -14,26 +16,52 @@ export default function App() {
 
   return (
 
-    <BrowserRouter>
+    <ToasterProvider>
+      <BrowserRouter>
 
-      <Layout>
+        <Layout>
 
-        <Routes>
+          <Routes>
 
-          <Route path="/" element={<Dashboard/>} />
-          <Route path="/dashboard" element={<Dashboard/>} />
+            <Route path="/" element={
+              <RequireWallet>
+                <Dashboard/>
+              </RequireWallet>
+            } />
+            <Route path="/dashboard" element={
+              <RequireWallet>
+                <Dashboard/>
+              </RequireWallet>
+            } />
 
-          <Route path="/create" element={<CreateTx/>} />
-          <Route path="/history" element={<History/>} />
-          <Route path="/profile" element={<Profile/>} />
-          <Route path="/vote" element={<Vote/>} />
-          <Route path="/multisig" element={<Multisig />} />
+            <Route path="/create" element={
+              <RequireWallet>
+                <CreateTx/>
+              </RequireWallet>
+            } />
+            <Route path="/history" element={
+              <RequireWallet>
+                <History/>
+              </RequireWallet>
+            } />
+            <Route path="/profile" element={<Profile/>} />
+            <Route path="/vote" element={
+              <RequireWallet>
+                <Vote/>
+              </RequireWallet>
+            } />
+            <Route path="/multisig" element={
+              <RequireWallet>
+                <Multisig/>
+              </RequireWallet>
+            } />
 
-        </Routes>
+          </Routes>
 
-      </Layout>
+        </Layout>
 
-    </BrowserRouter>
+      </BrowserRouter>
+    </ToasterProvider>
 
   )
 

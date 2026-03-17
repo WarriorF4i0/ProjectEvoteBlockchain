@@ -1,9 +1,12 @@
 import Navbar from "./Navbar"
 import Sidebar from "./Sidebar"
+import BackgroundVideo from "./BackgroundVideo"
 
 export default function Layout({ children }) {
   return (
-    <div className="flex min-h-screen w-screen bg-slate-950 text-white">
+    <div className="relative flex min-h-screen w-screen text-white">
+
+      <BackgroundVideo />
 
       <Sidebar />
 

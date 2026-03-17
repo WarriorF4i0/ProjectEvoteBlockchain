@@ -1,22 +1,33 @@
 /* eslint-disable react-hooks/immutability */
 import { useEffect, useState } from "react"
 import { ethers } from "ethers"
-import { getMultisigContract } from "../config/multisig"
+import { useWeb3 } from "../web3/useWeb3"
+import { getMultisigContractWithSigner } from "../contracts/multisig"
+import { useToast } from "../components/Toaster"
+import { sendTx } from "../web3/tx"
+import { Skeleton } from "../components/Skeleton"
 
 export default function Multisig(){
 
   const [txs,setTxs] = useState([])
   const [loading,setLoading] = useState(true)
+  const { signer } = useWeb3()
+  const toast = useToast()
+  const [txBusy,setTxBusy] = useState(null)
+  const [error,setError] = useState("")
 
   useEffect(()=>{
+    if(!signer) return
     loadTx()
-  },[])
+  },[signer])
 
   async function loadTx(){
 
     try{
 
-      const contract = await getMultisigContract()
+      setError("")
+      setLoading(true)
+      const contract = getMultisigContractWithSigner(signer)
 
       const count = Number(await contract.transactionsLength())
 
@@ -45,6 +56,8 @@ export default function Multisig(){
 
     }catch(err){
       console.error(err)
+      setError(err?.shortMessage || err?.message || "Failed to load transactions")
+      setTxs([])
     }
 
     setLoading(false)
@@ -60,18 +73,21 @@ export default function Multisig(){
         return
       }
 
-      const contract = await getMultisigContract()
+      const contract = getMultisigContractWithSigner(signer)
 
-      const tx = await contract.confirmAndPay(
-        id,
-        {
-          value: ethers.parseEther(value)
-        }
+      setTxBusy(`confirm_${id}`)
+      const res = await sendTx(()=>contract.confirmAndPay(
+          id,
+          {
+            value: ethers.parseEther(value)
+          }
+        ),
+        { toast, title:"Confirm & Pay" }
       )
-
-      await tx.wait()
-
-      loadTx()
+      setTxBusy(null)
+      if(res.status === "success"){
+        loadTx()
+      }
 
     }catch(err){
 
@@ -86,13 +102,17 @@ export default function Multisig(){
 
     try{
 
-      const contract = await getMultisigContract()
+      const contract = getMultisigContractWithSigner(signer)
 
-      const tx = await contract.executeTransaction(id)
-
-      await tx.wait()
-
-      loadTx()
+      setTxBusy(`execute_${id}`)
+      const res = await sendTx(
+        ()=>contract.executeTransaction(id),
+        { toast, title:"Execute transaction" }
+      )
+      setTxBusy(null)
+      if(res.status === "success"){
+        loadTx()
+      }
 
     }catch(err){
 
@@ -104,86 +124,131 @@ export default function Multisig(){
   }
 
   if(loading){
-    return <div style={{padding:"40px"}}>Loading...</div>
+    return (
+      <div className="w-full space-y-4">
+        <div className="card"><div className="card-inner space-y-3">
+          <Skeleton className="h-6 w-1/2" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+        </div></div>
+        <div className="card"><div className="card-inner space-y-3">
+          <Skeleton className="h-6 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+        </div></div>
+      </div>
+    )
   }
 
   return(
 
-    <div style={{padding:"40px"}}>
+    <div className="w-full">
 
-      <h2 style={{marginBottom:"25px"}}>Multisig Transactions</h2>
+      <h1 className="text-3xl font-bold mb-2">
+        Multisig Transactions
+      </h1>
+
+      <p className="text-slate-400 mb-6">
+        Confirm and execute payouts once enough confirmations are collected.
+      </p>
+
+      {error && (
+        <div className="card mb-6">
+          <div className="card-inner">
+            <p className="text-rose-300 font-semibold">Could not load transactions</p>
+            <p className="text-slate-300 mt-1 text-sm break-words">{error}</p>
+            <button className="btn-primary mt-4" onClick={loadTx}>
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {txs.length === 0 && (
-        <p>No transactions yet</p>
+        <div className="card">
+          <div className="card-inner">
+            <p className="text-slate-300">No transactions yet.</p>
+          </div>
+        </div>
       )}
 
       {txs.map(tx=>(
 
-        <div 
-          key={tx.id} 
-          style={{
-            background:"#020617",
-            border:"1px solid #1e293b",
-            padding:"28px",
-            marginBottom:"25px",
-            borderRadius:"12px",
-            maxWidth:"700px"
-          }}
-        >
+        <div key={tx.id} className="card mb-6">
+          <div className="card-inner">
 
-          <p><b>ID:</b> {tx.id}</p>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-slate-400 text-sm">
+                  Transaction #{tx.id}
+                </p>
+                <p className="mt-1">
+                  <span className="text-slate-500">Status:</span>{" "}
+                  {tx.executed
+                    ? <span className="badge-success">EXECUTED</span>
+                    : <span className="badge-warning">PENDING</span>
+                  }
+                </p>
+              </div>
 
-          <p>
-            <b>Recipient:</b> {tx.to}
-          </p>
+              <div className="text-sm text-slate-300">
+                <p className="text-slate-500">Confirmations</p>
+                <p className="font-semibold">
+                  {tx.confirmations} / {tx.required}
+                </p>
+              </div>
+            </div>
 
-          <p>
-            <b>Total Amount:</b> {tx.amount} ETH
-          </p>
+            <div className="mt-4 h-2.5 w-full rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+              <div
+                className="h-full bg-blue-500"
+                style={{
+                  width: `${tx.required === "0"
+                    ? 0
+                    : Math.min(100,Math.max(0,(Number(tx.confirmations) / Number(tx.required)) * 100))
+                  }%`
+                }}
+              />
+            </div>
 
-          <p>
-            <b>Amount per voter:</b> {tx.amountPerUser} ETH
-          </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5 text-sm">
+              <div className="space-y-1 md:col-span-2">
+                <p className="text-slate-500">Recipient</p>
+                <p className="font-mono break-all text-slate-200">
+                  {tx.to}
+                </p>
+              </div>
 
-          <p>
-            <b>Confirmations:</b> {tx.confirmations} / {tx.required}
-          </p>
+              <div className="space-y-1">
+                <p className="text-slate-500">Total Amount</p>
+                <p className="font-semibold text-slate-200">
+                  {tx.amount} ETH
+                </p>
+              </div>
 
-          <p>
-            <b>Status:</b> {tx.executed ? "Executed" : "Pending"}
-          </p>
+              <div className="space-y-1">
+                <p className="text-slate-500">Amount per voter</p>
+                <p className="font-semibold text-slate-200">
+                  {tx.amountPerUser} ETH
+                </p>
+              </div>
+            </div>
 
           {!tx.executed && (
 
-            <div style={{marginTop:"18px"}}>
+            <div className="mt-6 flex gap-3 flex-wrap">
 
               <button
                 onClick={()=>confirm(tx.id,tx.amountPerUser)}
-                style={{
-                  background:"#f59e0b",
-                  color:"#000",
-                  border:"none",
-                  padding:"10px 18px",
-                  borderRadius:"8px",
-                  cursor:"pointer",
-                  fontWeight:"600"
-                }}
+                className="btn-warning"
+                disabled={txBusy != null}
               >
                 Confirm & Pay
               </button>
 
               <button 
                 onClick={()=>execute(tx.id)}
-                style={{
-                  marginLeft:"12px",
-                  background:"#4f46e5",
-                  color:"#fff",
-                  border:"none",
-                  padding:"10px 18px",
-                  borderRadius:"8px",
-                  cursor:"pointer",
-                  fontWeight:"600"
-                }}
+                className="btn-purple"
+                disabled={txBusy != null}
               >
                 Execute
               </button>
@@ -192,6 +257,7 @@ export default function Multisig(){
 
           )}
 
+          </div>
         </div>
 
       ))}

@@ -1,7 +1,7 @@
 import { ethers } from "ethers"
 import abi from "../abi/MultiSigFund.json"
 
-const address = "0xEdfAe8403C274cF1ee3d13DBa544AEd34Ad86F68"
+const address = "0x4a42BEA78d51fF0cec8b797A7dD458a86432EAB3"
 
 export async function getMultisigContract(){
 

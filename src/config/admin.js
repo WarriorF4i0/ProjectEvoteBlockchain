@@ -1,1 +1,1 @@
-export const ADMIN_ADDRESS = "0x877ed9b6a381b53af308dab0fc228f8ceab1e7b9"
+export const ADMIN_ADDRESS = "0xb3ba822bF78cb1e615a81ce09c9F2A9371806eB1"

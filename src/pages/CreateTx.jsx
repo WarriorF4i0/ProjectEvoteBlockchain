@@ -1,6 +1,11 @@
 import { useState } from "react"
 import { ethers } from "ethers"
-import { getEVoteContract } from "../config/evote"
+import { useWeb3 } from "../web3/useWeb3"
+import { getEVoteContractWithSigner } from "../contracts/evote"
+import { useToast } from "../components/Toaster"
+import { sendTx } from "../web3/tx"
+import { EVOTE_ADDRESS } from "../contracts/addresses"
+import { assertContractDeployed } from "../contracts/assertDeployed"
 
 export default function CreateTx(){
 
@@ -9,17 +14,9 @@ export default function CreateTx(){
   const [recipient,setRecipient] = useState("")
   const [amount,setAmount] = useState("")
   const [deadline,setDeadline] = useState("")
-
-  const inputStyle = {
-    width:"100%",
-    marginBottom:"15px",
-    padding:"12px",
-    borderRadius:"8px",
-    border:"1px solid #1e293b",
-    background:"#020617",
-    color:"#e2e8f0",
-    outline:"none"
-  }
+  const { signer } = useWeb3()
+  const toast = useToast()
+  const [submitting,setSubmitting] = useState(false)
 
   async function createProposal(){
 
@@ -40,7 +37,8 @@ export default function CreateTx(){
 
     try{
 
-      const contract = await getEVoteContract()
+      await assertContractDeployed({ signer, address: EVOTE_ADDRESS, label:"EVoteDAO" })
+      const contract = getEVoteContractWithSigner(signer)
 
       // convert datetime-local -> duration
       const deadlineTimestamp = Math.floor(
@@ -58,17 +56,20 @@ export default function CreateTx(){
 
       const value = ethers.parseEther(amount)
 
-      const tx = await contract.createProposal(
-        title,
-        description,
-        value,
-        recipient,
-        duration
+      setSubmitting(true)
+      const res = await sendTx(()=>contract.createProposal(
+          title,
+          description,
+          value,
+          recipient,
+          duration
+        ),
+        { toast, title:"Create proposal" }
       )
 
-      await tx.wait()
-
-      alert("Proposal created")
+      if(res.status !== "success"){
+        return
+      }
 
       setTitle("")
       setDescription("")
@@ -79,72 +80,91 @@ export default function CreateTx(){
     }catch(err){
 
       console.error(err)
-      alert(err.reason || "Transaction failed")
+      toast.push({ type:"error", title:"Transaction failed", message: err?.message || "Transaction failed" })
 
+    }finally{
+      setSubmitting(false)
     }
 
   }
 
   return(
 
-    <div style={{padding:"40px",maxWidth:"600px"}}>
+    <div className="w-full max-w-2xl">
 
-      <h2 style={{marginBottom:"20px"}}>Create Proposal</h2>
-
-      <input
-        placeholder="Title"
-        value={title}
-        onChange={(e)=>setTitle(e.target.value)}
-        style={inputStyle}
-      />
-
-      <textarea
-        placeholder="Description"
-        value={description}
-        onChange={(e)=>setDescription(e.target.value)}
-        style={inputStyle}
-      />
-
-      <input
-        placeholder="Recipient Address"
-        value={recipient}
-        onChange={(e)=>setRecipient(e.target.value)}
-        style={inputStyle}
-      />
-
-      <input
-        placeholder="Amount (ETH)"
-        value={amount}
-        onChange={(e)=>setAmount(e.target.value)}
-        style={inputStyle}
-      />
-
-      <label style={{display:"block",marginBottom:"6px"}}>
-        Voting Deadline
-      </label>
-
-      <input
-        type="datetime-local"
-        value={deadline}
-        onChange={(e)=>setDeadline(e.target.value)}
-        style={inputStyle}
-      />
-
-      <button
-        onClick={createProposal}
-        style={{
-          width:"100%",
-          padding:"14px",
-          background:"#2563eb",
-          color:"#fff",
-          border:"none",
-          borderRadius:"10px",
-          cursor:"pointer",
-          fontWeight:"600"
-        }}
-      >
+      <h1 className="text-3xl font-bold mb-2">
         Create Proposal
-      </button>
+      </h1>
+
+      <p className="text-slate-400 mb-6">
+        Submit a new proposal for the DAO to vote on.
+      </p>
+
+      <div className="card">
+        <div className="card-inner space-y-4">
+
+          <div className="space-y-2">
+            <label className="label">Title</label>
+            <input
+              placeholder="Proposal title"
+              value={title}
+              onChange={(e)=>setTitle(e.target.value)}
+              className="input"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="label">Description</label>
+            <textarea
+              placeholder="Describe the proposal..."
+              value={description}
+              onChange={(e)=>setDescription(e.target.value)}
+              className="input min-h-28"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="label">Recipient Address</label>
+            <input
+              placeholder="0x..."
+              value={recipient}
+              onChange={(e)=>setRecipient(e.target.value)}
+              className="input font-mono"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="label">Amount (ETH)</label>
+              <input
+                placeholder="0.1"
+                value={amount}
+                onChange={(e)=>setAmount(e.target.value)}
+                className="input"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="label">Voting Deadline</label>
+              <input
+                type="datetime-local"
+                value={deadline}
+                onChange={(e)=>setDeadline(e.target.value)}
+                className="input"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={createProposal}
+            className="btn-primary w-full"
+            disabled={submitting}
+          >
+            {submitting ? "Submitting..." : "Create Proposal"}
+          </button>
+
+        </div>
+      </div>
 
     </div>
 

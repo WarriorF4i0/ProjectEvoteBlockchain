@@ -1,49 +1,14 @@
 /* eslint-disable react-hooks/immutability */
-import { useEffect,useState } from "react"
 import { Link,useLocation } from "react-router-dom"
 import { ADMIN_ADDRESS } from "../config/admin"
+import { useWeb3 } from "../web3/useWeb3"
 
 export default function Sidebar(){
 
 const location = useLocation()
 
-// eslint-disable-next-line no-unused-vars
-const [account,setAccount] = useState("")
-const [isAdmin,setIsAdmin] = useState(false)
-
-useEffect(()=>{
-
-checkWallet()
-
-if(window.ethereum){
-window.ethereum.on("accountsChanged",()=>{
-checkWallet()
-})
-}
-
-},[])
-
-async function checkWallet(){
-
-if(!window.ethereum) return
-
-const accounts = await window.ethereum.request({
-method:"eth_accounts"
-})
-
-if(accounts.length>0){
-
-setAccount(accounts[0])
-
-if(accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()){
-setIsAdmin(true)
-}else{
-setIsAdmin(false)
-}
-
-}
-
-}
+const { account } = useWeb3()
+const isAdmin = (account?.toLowerCase?.() ?? "") === ADMIN_ADDRESS.toLowerCase()
 
 const menu = [
 
@@ -62,11 +27,18 @@ menu.push({ name:"Profile", path:"/profile" })
 
 return(
 
-<div className="w-60 bg-slate-900 min-h-screen p-4">
+<div className="w-60 bg-slate-950/40 border-r border-slate-800/70 min-h-screen p-4 backdrop-blur">
 
 <h1 className="text-xl font-bold mb-6">
 E-Vote DAO
 </h1>
+
+<div className="mb-6">
+  <p className="text-xs text-slate-500">Wallet</p>
+  <p className="font-mono text-sm text-slate-200 break-all">
+    {account ? `${account.slice(0,6)}...${account.slice(-4)}` : "Not connected"}
+  </p>
+</div>
 
 <ul className="flex flex-col gap-2">
 

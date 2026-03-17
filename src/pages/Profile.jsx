@@ -123,55 +123,61 @@ export default function Profile(){
 
   return(
 
-    <div className="max-w-xl">
+    <div className="w-full max-w-xl">
 
-      <h1 className="text-2xl font-bold mb-6">
+      <h1 className="text-3xl font-bold mb-2">
         Complete Your Profile
       </h1>
 
-      <div className="bg-gray-900 p-6 rounded-xl">
+      <p className="text-slate-400 mb-6">
+        Add a name and avatar to personalize your wallet.
+      </p>
+
+      <div className="card">
+        <div className="card-inner">
 
         <div className="flex items-center gap-4 mb-6">
 
           <img
             src={avatar || "/avatar-default.png"}
-            className="w-20 h-20 rounded-full"
+            className="w-20 h-20 rounded-full ring-2 ring-slate-800 object-cover"
           />
 
           <input
             type="file"
             onChange={uploadAvatar}
+            className="text-sm text-slate-300 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-100 hover:file:bg-slate-700"
           />
 
         </div>
 
         <div className="mb-4">
 
-          <p>Name</p>
+          <p className="label mb-2">Name</p>
 
           <input
             value={name}
             onChange={(e)=>setName(e.target.value)}
-            className="w-full p-2 text-black rounded"
+            className="input"
           />
 
         </div>
 
         <div className="mb-4">
 
-          <p>Age</p>
+          <p className="label mb-2">Age</p>
 
           <input
             value={age}
             onChange={(e)=>setAge(e.target.value)}
-            className="w-full p-2 text-black rounded"
+            className="input"
           />
 
         </div>
 
         <button
           onClick={saveProfile}
-          className="bg-blue-500 px-4 py-2 rounded"
+          className="btn-primary"
         >
           Save Profile
         </button>
@@ -182,12 +188,13 @@ export default function Profile(){
             Wallet Address
           </p>
 
-          <p className="break-all">
+          <p className="break-all font-mono text-slate-200">
             {wallet}
           </p>
 
         </div>
 
+      </div>
       </div>
 
     </div>

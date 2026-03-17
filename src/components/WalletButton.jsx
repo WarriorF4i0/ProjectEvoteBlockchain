@@ -1,14 +1,23 @@
-import { useState } from "react"
-import { connectWallet } from "../abi/constract"
+import { useEffect } from "react"
 import { db } from "../firebase"
 import { ref, get, set } from "firebase/database"
 import { useNavigate } from "react-router-dom"
+import { useWeb3 } from "../web3/useWeb3"
 
 export default function WalletButton(){
 
   const navigate = useNavigate()
-
-  const [account,setAccount] = useState(null)
+  const {
+    hasProvider,
+    account,
+    balanceEth,
+    chainId,
+    isCorrectNetwork,
+    connecting,
+    connect: web3Connect,
+    disconnect,
+    switchToHardhat
+  } = useWeb3()
 
   const avatar = localStorage.getItem("avatar")
 
@@ -16,11 +25,9 @@ export default function WalletButton(){
 
     try{
 
-      const addr = await connectWallet()
+      const addr = await web3Connect()
 
       if(!addr) return
-
-      setAccount(addr)
 
       const userRef = ref(db,"users/"+addr)
 
@@ -67,16 +74,7 @@ export default function WalletButton(){
         method: "wallet_requestPermissions",
         params: [{ eth_accounts: {} }]
       })
-
-      const accounts = await window.ethereum.request({
-        method:"eth_accounts"
-      })
-
-      if(accounts.length){
-
-        setAccount(accounts[0])
-
-      }
+      await web3Connect()
 
     }catch(err){
 
@@ -89,7 +87,7 @@ export default function WalletButton(){
 
   function logout(){
 
-    setAccount(null)
+    disconnect()
 
     window.dispatchEvent(new Event("walletChanged"))
 
@@ -97,6 +95,19 @@ export default function WalletButton(){
 
   }
 
+  useEffect(()=>{
+    if(account){
+      try{ localStorage.setItem("wallet",account) }catch{}
+    }
+  },[account])
+
+  if(!hasProvider){
+    return (
+      <span className="text-sm text-slate-300">
+        MetaMask not found
+      </span>
+    )
+  }
 
   if(!account){
 
@@ -104,9 +115,10 @@ export default function WalletButton(){
 
       <button
         onClick={connect}
-        className="bg-green-600 px-4 py-2 rounded"
+        className="btn-success"
+        disabled={connecting}
       >
-        Connect Wallet
+        {connecting ? "Connecting..." : "Connect Wallet"}
       </button>
 
     )
@@ -120,23 +132,37 @@ export default function WalletButton(){
 
       <img
         src={avatar || "/avatar-default.png"}
-        className="w-8 h-8 rounded-full"
+        className="w-8 h-8 rounded-full ring-2 ring-slate-800 object-cover"
       />
 
-      <span>
-        {account.slice(0,6)}...{account.slice(-4)}
-      </span>
+      <div className="flex flex-col leading-tight">
+        <span className="font-mono text-sm">
+          {account.slice(0,6)}...{account.slice(-4)}
+        </span>
+        <span className="text-xs text-slate-400">
+          {balanceEth != null ? `${Number(balanceEth).toFixed(4)} ETH` : "-"} • Chain {chainId ?? "-"}
+        </span>
+      </div>
+
+      {!isCorrectNetwork && (
+        <button
+          onClick={switchToHardhat}
+          className="btn-primary px-3 py-2"
+        >
+          Switch Ganache
+        </button>
+      )}
 
       <button
         onClick={switchWallet}
-        className="bg-yellow-500 px-2 py-1 rounded text-sm"
+        className="btn-warning px-3 py-2"
       >
         Switch
       </button>
 
       <button
         onClick={logout}
-        className="bg-red-500 px-2 py-1 rounded text-sm"
+        className="btn-danger px-3 py-2"
       >
         Logout
       </button>
