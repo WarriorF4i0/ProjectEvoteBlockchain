@@ -1,106 +1,131 @@
 /* eslint-disable react-hooks/immutability */
-import { useEffect,useState } from "react"
-import { Link,useLocation } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Link, useLocation } from "react-router-dom"
 import { ADMIN_ADDRESS } from "../config/admin"
 
 export default function Sidebar(){
 
-const location = useLocation()
+  const location = useLocation()
 
-// eslint-disable-next-line no-unused-vars
-const [account,setAccount] = useState("")
-const [isAdmin,setIsAdmin] = useState(false)
+  const [isAdmin,setIsAdmin] = useState(false)
 
-useEffect(()=>{
+  useEffect(()=>{
 
-checkWallet()
+    checkWallet()
 
-if(window.ethereum){
-window.ethereum.on("accountsChanged",()=>{
-checkWallet()
-})
-}
+    function onWalletChanged(){
+      checkWallet()
+    }
 
-},[])
+    window.addEventListener("walletChanged", onWalletChanged)
 
-async function checkWallet(){
+    if(window.ethereum){
+      window.ethereum.on("accountsChanged", checkWallet)
+    }
 
-if(!window.ethereum) return
+    return ()=>{
+      window.removeEventListener("walletChanged", onWalletChanged)
+      if(window.ethereum){
+        window.ethereum.removeListener("accountsChanged", checkWallet)
+      }
+    }
 
-const accounts = await window.ethereum.request({
-method:"eth_accounts"
-})
+  },[])
 
-if(accounts.length>0){
+  async function checkWallet(){
 
-setAccount(accounts[0])
+    if(!window.ethereum){
+      setIsAdmin(false)
+      return
+    }
 
-if(accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()){
-setIsAdmin(true)
-}else{
-setIsAdmin(false)
-}
+    const accounts = await window.ethereum.request({
+      method:"eth_accounts"
+    })
 
-}
+    if(accounts.length>0){
 
-}
+      if(accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()){
+        setIsAdmin(true)
+      }else{
+        setIsAdmin(false)
+      }
 
-const menu = [
+    }else{
+      setIsAdmin(false)
+    }
 
-{ name:"Dashboard", path:"/" },
-{ name:"Vote", path:"/vote" },
-{ name:"Multisig", path:"/multisig" },
+  }
 
-]
+  const menu = [
 
-// admin only
-if(isAdmin){
-menu.push({ name:"Create", path:"/create" })
-}
+    { name:"Dashboard", path:"/" },
+    { name:"Vote", path:"/vote" },
+    { name:"Multisig", path:"/multisig" },
+    { name:"Lịch sử", path:"/history" },
 
-menu.push({ name:"Profile", path:"/profile" })
+  ]
 
-return(
+  if(!isAdmin){
+    menu.splice(3, 0, { name:"Tạo proposal", path:"/create" })
+  }
 
-<div className="w-60 bg-slate-900 min-h-screen p-4">
+  menu.push({ name:"Profile", path:"/profile" })
 
-<h1 className="text-xl font-bold mb-6">
-E-Vote DAO
-</h1>
+  return(
 
-<ul className="flex flex-col gap-2">
+    <aside className="relative z-40 flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-slate-800/90 bg-slate-900/95 sm:w-60">
 
-{menu.map((item)=>{
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-emerald-500/10 to-transparent" />
 
-const active = location.pathname === item.path
+      <div className="relative flex flex-col p-5">
 
-return(
+        <Link to="/" className="mb-8 flex items-center gap-3">
 
-<Link key={item.path} to={item.path}>
+          <img
+            src="./evote.jpg"
+            alt="E-Vote DAO"
+            className="w-full aspect-[16/9] object-cover rounded-xl"
+          />
 
-<li className={`p-3 rounded-lg transition border-l-4
+        </Link>
 
-${active
-? "bg-blue-600 border-blue-300"
-: "border-transparent hover:bg-slate-800"
-}`}
+        {/* <Link to="/" className="mb-8 block"> <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90"> E‑Vote </p> <h1 className="text-xl font-bold tracking-tight text-white"> DAO </h1> </Link><Link to="/" className="mb-8 block"> <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90"> E‑Vote </p> <h1 className="text-xl font-bold tracking-tight text-white"> DAO </h1> </Link> */}
 
->
+        <nav className="flex flex-col gap-1">
+          {menu.map((item)=>{
 
-{item.name}
+            const active = location.pathname === item.path
 
-</li>
+            return(
 
-</Link>
+              <Link key={item.path} to={item.path}>
 
-)
+                <span
+                  className={`
+                    block rounded-xl px-4 py-3 text-sm font-medium transition
+                    ${active
+                      ? "bg-gradient-to-r from-emerald-600/90 to-teal-600/80 text-white shadow-md shadow-emerald-900/20"
+                      : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+                    }
+                  `}
+                >
 
-})}
+                  {item.name}
 
-</ul>
+                </span>
 
-</div>
+              </Link>
 
-)
+            )
+
+          })}
+        </nav>
+
+      </div>
+
+    </aside>
+
+  )
 
 }

@@ -2,13 +2,14 @@ import { useState, useEffect } from "react"
 import { db } from "../firebase"
 import { ref, get, update } from "firebase/database"
 import { useNavigate } from "react-router-dom"
+import { normalizeWalletKey, formatHiddenAddress } from "../utils/wallet"
 
 export default function Profile(){
 
   const navigate = useNavigate()
 
   const [wallet,setWallet] = useState(
-    localStorage.getItem("wallet")
+    ()=>normalizeWalletKey(localStorage.getItem("wallet") || "")
   )
 
   const [avatar,setAvatar] = useState(
@@ -25,7 +26,7 @@ export default function Profile(){
 
     async function loadProfile(){
 
-      const w = localStorage.getItem("wallet")
+      const w = normalizeWalletKey(localStorage.getItem("wallet") || "")
 
       if(!w){
         navigate("/")
@@ -34,7 +35,7 @@ export default function Profile(){
 
       setWallet(w)
 
-      const userRef = ref(db,"users/"+w)
+      const userRef = ref(db, `users/${w}`)
 
       const snapshot = await get(userRef)
 
@@ -77,10 +78,11 @@ export default function Profile(){
 
       localStorage.setItem("avatar",img)
 
-      const userRef = ref(db,"users/"+wallet)
+      const userRef = ref(db, `users/${wallet}`)
 
       await update(userRef,{
-        avatar: img
+        avatar: img,
+        updatedAt: Date.now()
       })
 
       window.dispatchEvent(new Event("avatarUpdated"))
@@ -102,11 +104,13 @@ export default function Profile(){
 
     }
 
-    const userRef = ref(db,"users/"+wallet)
+    const userRef = ref(db, `users/${wallet}`)
 
     await update(userRef,{
       name,
-      age
+      age,
+      wallet,
+      updatedAt: Date.now()
     })
 
     alert("Profile completed")
@@ -182,8 +186,8 @@ export default function Profile(){
             Wallet Address
           </p>
 
-          <p className="break-all">
-            {wallet}
+          <p className="font-mono text-slate-200" title={wallet}>
+            {formatHiddenAddress(wallet)}
           </p>
 
         </div>

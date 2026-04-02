@@ -1,7 +1,11 @@
 import { ethers } from "ethers";
 import abi from "../abi/EVoteDAO.json";
 
-export const EVOTE_ADDRESS = "0x2A057951593dDAD64d75a54F55DD0E90F3A99b06";
+const EVOTE_ADDRESS = "Your_Evoting_Address_here";
+
+
+console.log("EVOTE_ADDRESS", EVOTE_ADDRESS);
+export { EVOTE_ADDRESS };
 
 export async function getEVoteContract() {
 

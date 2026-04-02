@@ -1,7 +1,7 @@
 import { ethers } from "ethers"
 import abi from "../abi/MultiSigFund.json"
 
-const address = "0xEdfAe8403C274cF1ee3d13DBa544AEd34Ad86F68"
+const address = "Your_Multisig_Address_here"
 
 export async function getMultisigContract(){
 
@@ -13,6 +13,8 @@ export async function getMultisigContract(){
   const provider = new ethers.BrowserProvider(window.ethereum)
 
   const signer = await provider.getSigner()
+
+  console.log("contract code:", address)
 
   const contract = new ethers.Contract(
     address,

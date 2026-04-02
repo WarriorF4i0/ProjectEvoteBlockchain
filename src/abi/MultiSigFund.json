@@ -118,17 +118,22 @@
 			},
 			{
 				"internalType": "uint256",
+				"name": "amountCollected",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "minContribution",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
 				"name": "requiredConfirmations",
 				"type": "uint256"
 			},
 			{
 				"internalType": "uint256",
 				"name": "confirmCount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "amountPerUser",
 				"type": "uint256"
 			},
 			{
@@ -152,5 +157,9 @@
 		],
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"stateMutability": "payable",
+		"type": "receive"
 	}
 ]

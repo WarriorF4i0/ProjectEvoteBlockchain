@@ -1,8 +1,10 @@
-/* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/purity */
 /* eslint-disable react-hooks/immutability */
-import { useEffect,useState } from "react"
+import { useEffect, useState } from "react"
+import { ethers } from "ethers"
 import { getEVoteContract } from "../config/evote"
+import { recordVoteFull } from "../utils/voteSync"
+import { formatHiddenAddress, normalizeWalletKey } from "../utils/wallet"
 
 export default function Vote(){
 
@@ -12,6 +14,8 @@ export default function Vote(){
 
   useEffect(()=>{
     load()
+    const t = setInterval(load, 5000)
+    return ()=>clearInterval(t)
   },[])
 
   async function load(){
@@ -25,6 +29,7 @@ export default function Vote(){
     setAdmin(adminAddr.toLowerCase())
 
     const count = Number(await contract.proposalCount())
+    const now = Math.floor(Date.now()/1000)
 
     const list = []
 
@@ -32,16 +37,36 @@ export default function Vote(){
 
       const p = await contract.getProposal(i)
 
-      list.push({
+      const creator = p[9] != null && p[9] !== undefined
+        ? String(p[9]).toLowerCase()
+        : ""
+
+      const deadline = Number(p[7])
+      const finalized = p[8]
+      const votingOpen = !finalized && now < deadline
+
+      const reported = p[10] ?? false
+      const reportCount = Number(p[11] ?? 0)
+
+      const cancelled = await contract.cancelled(i)
+      const cancelReason = await contract.cancelReason(i)
+
+      list.unshift({
         id:Number(p[0]),
         title:p[1],
         description:p[2],
-        amount:Number(p[3]),
+        amount:p[3],
         recipient:p[4],
         yes:Number(p[5]),
         no:Number(p[6]),
-        deadline:Number(p[7]),
-        finalized:p[8]
+        deadline,
+        finalized,
+        creator,
+        votingOpen,
+        reported,
+        reportCount,
+        cancelled,
+        cancelReason
       })
 
     }
@@ -50,145 +75,278 @@ export default function Vote(){
 
   }
 
-  async function vote(id,value){
+  async function vote(id, value, title){
+
+    if(account === admin){
+      alert("Admin không vote.")
+      return
+    }
 
     const contract = await getEVoteContract()
 
     const tx = await contract.vote(id,value)
-
     await tx.wait()
 
+    const signer = await contract.runner.getAddress()
+    await recordVoteFull(id, signer, value, title)
+
     load()
+  }
+
+  async function endVotingEarly(id){
+
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.endVotingEarly(id)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Lỗi")
+    }
 
   }
 
   async function finalize(id){
 
-    const contract = await getEVoteContract()
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.finalizeProposal(id)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Finalize failed")
+    }
 
-    const tx = await contract.finalizeProposal(id)
+  }
 
-    await tx.wait()
+  async function report(id){
 
-    load()
+    const reason = prompt("Nhập lý do report:")
+    if(!reason) return
+
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.reportProposal(id, reason)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Report failed")
+    }
+
+  }
+
+  async function viewReports(id){
+
+    try{
+      const contract = await getEVoteContract()
+      const data = await contract.getReports(id)
+
+      if(!data.length){
+        alert("Không có report")
+        return
+      }
+
+      alert(
+        data.map(r => `${r.reporter}\n${r.reason}`).join("\n\n")
+      )
+
+    }catch(err){
+      console.error(err)
+      alert("Không lấy được report")
+    }
+
+  }
+
+  async function cancel(id){
+
+    const reason = prompt("Nhập lý do huỷ proposal:")
+    if(!reason) return
+
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.cancelProposal(id, reason)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Cancel failed")
+    }
 
   }
 
   return(
 
-    <div style={{padding:"30px"}}>
+    <div className="w-full max-w-none text-white">
 
-      <h2>Vote Proposals</h2>
+      <h1 className="mb-8 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+        Vote
+      </h1>
 
-      {proposals.map(p=>{
+      <div className="mx-auto w-full max-w-4xl space-y-6">
 
-        const total = p.yes + p.no
+        {proposals.map(p=>{
 
-        const yesPercent = total ? ((p.yes/total)*100).toFixed(1) : 0
-        const noPercent = total ? ((p.no/total)*100).toFixed(1) : 0
+          const total = p.yes + p.no
+          const yesPercent = total ? ((p.yes/total)*100).toFixed(1) : 0
+          const noPercent = total ? ((p.no/total)*100).toFixed(1) : 0
 
-        const isAdmin = account === admin
+          const isAdmin = account === admin
+          const canVote = !isAdmin && account && p.votingOpen && !p.cancelled
 
-        const now = Date.now()/1000
-        const ended = now > p.deadline
+          const deadlineText = new Date(p.deadline*1000).toLocaleString()
 
-        const deadlineText = new Date(
-          p.deadline*1000
-        ).toLocaleString()
+          const w = normalizeWalletKey(account)
+          const canEndEarly = Boolean(
+            p.creator &&
+            w &&
+            w === p.creator &&
+            p.votingOpen
+          )
 
-        return(
+          const votingEnded = !p.finalized && !p.votingOpen
 
-          <div
-            key={p.id}
-            style={{
-              background:"#0f172a",
-              padding:"25px",
-              marginBottom:"25px",
-              borderRadius:"12px",
-              border:"1px solid #1e293b",
-              maxWidth:"600px"
-            }}
-          >
+          return(
 
-            <h3>{p.title}</h3>
+            <article
+              key={p.id}
+              className="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/40 shadow-lg"
+            >
 
-            <p>{p.description}</p>
+              <div className="border-b border-slate-800/80 px-6 py-5">
+                <p className="text-xs font-medium text-slate-500">#{p.id}</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">{p.title}</h2>
+                <p className="mt-2 text-sm text-slate-400">{p.description}</p>
+              </div>
 
-            <p><b>Recipient:</b> {p.recipient}</p>
+              <div className="space-y-2 px-6 py-4 text-sm">
+                <p>
+                  <span className="text-slate-500">Người nhận:</span>{" "}
+                  <span className="font-mono text-slate-200">
+                    {formatHiddenAddress(p.recipient)}
+                  </span>
+                </p>
 
-            <p><b>Amount:</b> {p.amount}</p>
+                <p>
+                  <span className="text-slate-500">Số tiền:</span>{" "}
+                  <span className="text-slate-200">
+                    {ethers.formatEther(p.amount)} ETH
+                  </span>
+                </p>
 
-            <p><b>Deadline:</b> {deadlineText}</p>
+                <p>
+                  <span className="text-slate-500">Hạn:</span>{" "}
+                  <span className="text-slate-200">{deadlineText}</span>
+                </p>
 
-            <p><b>YES:</b> {p.yes}</p>
-            <p><b>NO:</b> {p.no}</p>
+                <p>
+                  <span className="text-slate-500">YES / NO:</span>{" "}
+                  <span className="text-emerald-300">{p.yes}</span>
+                  {" / "}
+                  <span className="text-rose-300">{p.no}</span>
+                  <span className="text-slate-500">
+                    ({yesPercent}% / {noPercent}%)
+                  </span>
+                </p>
 
-            {!p.finalized && !ended && (
+                {p.reportCount > 0 && (
+                  <p className="text-sm font-medium text-rose-400">
+                    ⚠️ Proposal đang bị report ({p.reportCount})
+                  </p>
+                )}
 
-              <div>
+                {p.cancelled && (
+                  <p className="text-sm font-medium text-red-400">
+                    ❌ Đã huỷ: {p.cancelReason}
+                  </p>
+                )}
+              </div>
 
-                <button
-                  onClick={()=>vote(p.id,true)}
-                  style={{
-                    marginRight:"10px",
-                    padding:"10px",
-                    background:"#22c55e",
-                    border:"none",
-                    borderRadius:"6px"
-                  }}
-                >
-                  Vote YES
-                </button>
+              <div className="flex flex-wrap gap-3 border-t border-slate-800/60 px-6 py-4">
 
-                <button
-                  onClick={()=>vote(p.id,false)}
-                  style={{
-                    padding:"10px",
-                    background:"#ef4444",
-                    border:"none",
-                    borderRadius:"6px"
-                  }}
-                >
-                  Vote NO
-                </button>
+                {/* FINALIZED → NO ACTIONS */}
+                {p.finalized ? (
+                  <p className="text-sm font-medium text-emerald-400">
+                    Đã finalize.
+                  </p>
+                ) : (
+                  <>
+                    {canEndEarly && (
+                      <button
+                        onClick={()=>endVotingEarly(p.id)}
+                        className="rounded-xl border border-slate-500 bg-slate-800/80 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+                      >
+                        Kết thúc vote sớm
+                      </button>
+                    )}
+
+                    {canVote && (
+                      <>
+                        <button
+                          onClick={()=>vote(p.id,true,p.title)}
+                          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+                        >
+                          Vote YES
+                        </button>
+
+                        <button
+                          onClick={()=>vote(p.id,false,p.title)}
+                          className="rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-500"
+                        >
+                          Vote NO
+                        </button>
+                      </>
+                    )}
+
+                    {!isAdmin && !p.cancelled && (
+                      <button
+                        onClick={()=>report(p.id)}
+                        className="rounded-xl border border-rose-500 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/20"
+                      >
+                        Report ({p.reportCount})
+                      </button>
+                    )}
+
+                    {isAdmin && p.reportCount > 0 && !p.cancelled && (
+                      <>
+                        <button
+                          onClick={()=>viewReports(p.id)}
+                          className="rounded-xl bg-yellow-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-yellow-500"
+                        >
+                          Xem report
+                        </button>
+
+                        <button
+                          onClick={()=>cancel(p.id)}
+                          className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                        >
+                          Huỷ proposal
+                        </button>
+                      </>
+                    )}
+
+                    {isAdmin && votingEnded && !p.cancelled && (
+                      <button
+                        onClick={()=>finalize(p.id)}
+                        className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
+                      >
+                        Finalize → Multisig
+                      </button>
+                    )}
+                  </>
+                )}
 
               </div>
 
-            )}
+            </article>
 
-            {isAdmin && !p.finalized && (
+          )
 
-              <button
-                onClick={()=>finalize(p.id)}
-                style={{
-                  marginTop:"15px",
-                  padding:"10px 18px",
-                  background:"#6366f1",
-                  border:"none",
-                  borderRadius:"6px"
-                }}
-              >
-                FINALIZE
-              </button>
+        })}
 
-            )}
-
-            {p.finalized && (
-
-              <p style={{
-                color:"#22c55e",
-                marginTop:"10px"
-              }}>
-                Proposal Finalized
-              </p>
-
-            )}
-
-          </div>
-
-        )
-
-      })}
+      </div>
 
     </div>
 
