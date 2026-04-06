@@ -1,6 +1,6 @@
 import { ethers } from "ethers"
 
-export const contractAddress = "0xec62a663eF2117FDE566FFcc6A785FDFF395BE3e"
+export const contractAddress = "0x8d37CcDdF8E56C7895B93077EEa704145C36D95E"
 
 export const abi = [
 	{

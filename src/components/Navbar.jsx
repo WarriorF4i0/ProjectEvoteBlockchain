@@ -4,15 +4,20 @@ export default function Navbar(){
 
   return(
 
-    <div className="flex justify-between p-4 bg-gray-900">
+    <header className="z-30 shrink-0 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
 
-      <h1 className="text-xl">
-        Blockchain dApp
-      </h1>
+      <div className="flex w-full flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-8">
 
-      <WalletButton/>
+        <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+          E‑Vote DAO
+        </h1>
 
-    </div>
+        <WalletButton/>
+
+      </div>
+
+    </header>
 
   )
+
 }

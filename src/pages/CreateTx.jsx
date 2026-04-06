@@ -1,56 +1,140 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ethers } from "ethers"
-import { getContract } from "../abi/constract"
+import { ref, set } from "firebase/database"
+console.log("chay5 do đoayđoay");
+import { getEVoteContract, EVOTE_ADDRESS } from "../config/evote"
+import { ADMIN_ADDRESS } from "../config/admin"
+import { db } from "../firebase"
+import { normalizeWalletKey } from "../utils/wallet"
+
+function formatProposalCreateError(err, contractAddr) {
+  const reason =
+    err?.reason ||
+    err?.revert?.args?.[0]
+
+  if (reason && typeof reason === "string") {
+    if (/only admin/i.test(reason)) {
+      return (
+        `Contract trả về: "${reason}".\n\n` +
+        "Phiên bản smart contract trên chain đang **chỉ cho admin** gọi createProposal. " +
+        "Để mọi người đều tạo được proposal, bạn cần **deploy lại** EVoteDAO (bỏ onlyAdmin trên createProposal) " +
+        "và cập nhật `EVOTE_ADDRESS` trong `src/config/evote.js`.\n\n" +
+        `Địa chỉ hiện tại: ${contractAddr}`
+      )
+    }
+    return reason
+  }
+
+  const short = err?.shortMessage || err?.message || ""
+
+  if (err?.code === "CALL_EXCEPTION" || short.includes("missing revert")) {
+    return (
+      "Contract từ chối giao dịch (revert). RPC không trả về lý do chi tiết.\n\n" +
+      "Thử kiểm tra: đúng mạng MetaMask, hoặc contract vẫn đang giới hạn chỉ admin tạo proposal.\n\n" +
+      `Địa chỉ DAO: ${contractAddr}`
+    )
+  }
+
+  return short || "Transaction failed"
+}
 
 export default function CreateTx(){
 
   const [title,setTitle] = useState("")
   const [description,setDescription] = useState("")
+  const [recipient,setRecipient] = useState("")
   const [amount,setAmount] = useState("")
-  const [endTime,setEndTime] = useState("")
+  const [deadline,setDeadline] = useState("")
+  const [wallet,setWallet] = useState(()=>localStorage.getItem("wallet"))
+  const [isAdmin,setIsAdmin] = useState(false)
 
-  async function submit(){
+  useEffect(()=>{
+
+    function sync(){
+      const w = localStorage.getItem("wallet")
+      setWallet(w)
+      setIsAdmin(Boolean(w && w.toLowerCase() === ADMIN_ADDRESS.toLowerCase()))
+    }
+
+    sync()
+    window.addEventListener("walletChanged", sync)
+    return ()=>window.removeEventListener("walletChanged", sync)
+
+  },[])
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 placeholder:text-slate-600 outline-none ring-emerald-500/0 transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-45"
+
+  async function createProposal(){
+
+    if(isAdmin){
+      alert("Admin không tạo proposal; chỉ duyệt (finalize) sau khi vote xong.")
+      return
+    }
+
+    if(!wallet){
+      alert("Kết nối ví trước (Kết nối ví trên góc màn hình).")
+      return
+    }
+
+    if(!title || !description || !recipient || !deadline || !amount){
+      alert("Điền đủ các trường.")
+      return
+    }
+
+    if(!ethers.isAddress(recipient)){
+      alert("Địa chỉ người nhận không hợp lệ.")
+      return
+    }
+
+    if(Number(amount) <= 0){
+      alert("Số tiền phải lớn hơn 0.")
+      return
+    }
 
     try{
 
-      if(!title || !description){
-        alert("Please enter title and description")
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const code = await provider.getCode(EVOTE_ADDRESS)
+
+      if(!code || code === "0x"){
+        alert(
+          `Không có bytecode tại ${EVOTE_ADDRESS} trên mạng MetaMask đang chọn. ` +
+          "Hãy chuyển đúng network nơi bạn đã deploy DAO."
+        )
         return
       }
 
-      if(!amount){
-        alert("Enter amount")
-        return
-      }
+      const contract = await getEVoteContract()
 
-      if(!endTime){
-        alert("Select voting end time")
-        return
-      }
+      const deadlineTimestamp = Math.floor(
+        new Date(deadline).getTime()/1000
+      )
 
-      // thời gian hiện tại
-      const now = Math.floor(Date.now() / 1000)
+      const now = Math.floor(Date.now()/1000)
 
-      // thời gian user chọn
-      const endTimestamp = Math.floor(new Date(endTime).getTime() / 1000)
-
-      // duration contract cần
-      const duration = endTimestamp - now
+      const duration = deadlineTimestamp - now
 
       if(duration <= 0){
-        alert("End time must be in the future")
+        alert("Deadline phải ở tương lai.")
         return
       }
 
-      const accounts = await window.ethereum.request({
-        method:"eth_accounts"
-      })
-
-      const recipient = accounts[0]
-
-      const contract = await getContract()
-
       const value = ethers.parseEther(amount)
+
+      try{
+        await contract.createProposal.staticCall(
+          title,
+          description,
+          value,
+          recipient,
+          duration
+        )
+      }catch(simErr){
+        console.error(simErr)
+        alert(formatProposalCreateError(simErr, EVOTE_ADDRESS))
+        return
+      }
 
       const tx = await contract.createProposal(
         title,
@@ -62,17 +146,36 @@ export default function CreateTx(){
 
       await tx.wait()
 
-      alert("Proposal created successfully")
+      const count = Number(await contract.proposalCount())
+      const creator = normalizeWalletKey(await contract.runner.getAddress())
+
+      await set(ref(db, `proposalsMeta/${count}`), {
+        id: count,
+        title,
+        createdBy: creator,
+        createdAt: Date.now()
+      })
+
+      await set(ref(db, `userActivity/${creator}/created/${count}`), {
+        proposalId: count,
+        title,
+        createdAt: Date.now()
+      })
+
+      alert("Đã tạo proposal thành công.")
 
       setTitle("")
       setDescription("")
+      setRecipient("")
       setAmount("")
-      setEndTime("")
+      setDeadline("")
+
+      window.dispatchEvent(new Event("walletChanged"))
 
     }catch(err){
 
       console.error(err)
-      alert("Transaction failed")
+      alert(formatProposalCreateError(err, EVOTE_ADDRESS))
 
     }
 
@@ -80,55 +183,72 @@ export default function CreateTx(){
 
   return(
 
-    <div className="max-w-xl">
+    <div className="w-full min-w-0 text-white">
 
-      <h1 className="text-3xl mb-6 font-bold">
-        Tạo Proposal Mới
+      <h1 className="mb-8 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+        Tạo proposal
       </h1>
 
-      <div className="flex flex-col gap-4">
+      <div className="w-full min-w-0 space-y-4 rounded-2xl border border-slate-700/60 bg-slate-900/40 p-6 shadow-xl lg:max-w-4xl">
 
         <input
+          disabled={isAdmin || !wallet}
           placeholder="Tiêu đề"
-          className="bg-gray-800 p-3 rounded"
           value={title}
           onChange={(e)=>setTitle(e.target.value)}
+          className={inputClass}
         />
 
         <textarea
-          placeholder="chi tiết"
-          className="bg-gray-800 p-3 rounded"
+          placeholder="Mô tả"
           value={description}
           onChange={(e)=>setDescription(e.target.value)}
+          className={`${inputClass} min-h-[100px] resize-y`}
+          disabled={isAdmin || !wallet}
         />
 
         <input
-          placeholder="Giá ETH (nếu có)"
-          className="bg-gray-800 p-3 rounded"
+          placeholder="Địa chỉ người nhận (0x...)"
+          value={recipient}
+          onChange={(e)=>setRecipient(e.target.value)}
+          className={inputClass}
+          disabled={isAdmin || !wallet}
+        />
+
+        <input
+          placeholder="Số tiền (ETH)"
           value={amount}
           onChange={(e)=>setAmount(e.target.value)}
+          className={inputClass}
+          disabled={isAdmin || !wallet}
         />
 
-        <label className="text-gray-400">
-          Thời gian kết thúc voting
-        </label>
-
-        <input
-          type="datetime-local"
-          className="bg-gray-800 p-3 rounded"
-          value={endTime}
-          onChange={(e)=>setEndTime(e.target.value)}
-        />
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-slate-400">
+            Hạn vote
+          </label>
+          <input
+            type="datetime-local"
+            value={deadline}
+            onChange={(e)=>setDeadline(e.target.value)}
+            className={inputClass}
+            disabled={isAdmin || !wallet}
+          />
+        </div>
 
         <button
-          onClick={submit}
-          className="bg-blue-600 hover:bg-blue-500 p-3 rounded"
+          type="button"
+          onClick={createProposal}
+          disabled={isAdmin || !wallet}
+          className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-500 hover:to-teal-500 disabled:cursor-not-allowed disabled:from-slate-600 disabled:to-slate-600 disabled:shadow-none"
         >
-          Tạo Proposal
+          Tạo proposal
         </button>
 
       </div>
 
     </div>
+
   )
+
 }

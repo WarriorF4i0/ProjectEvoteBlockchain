@@ -1,291 +1,350 @@
-import { useState, useEffect } from "react"
+/* eslint-disable react-hooks/purity */
+/* eslint-disable react-hooks/immutability */
+import { useEffect, useState } from "react"
 import { ethers } from "ethers"
-import { getContract } from "../abi/constract"
-import WalletButton from "../components/WalletButton"
+import { getEVoteContract } from "../config/evote"
+import { recordVoteFull } from "../utils/voteSync"
+import { formatHiddenAddress, normalizeWalletKey } from "../utils/wallet"
 
-export default function Vote() {
+export default function Vote(){
 
-  const [proposalId, setProposalId] = useState("")
-  const [support, setSupport] = useState(true)
-  const [proposals, setProposals] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [account, setAccount] = useState("")
+  const [proposals,setProposals] = useState([])
+  const [admin,setAdmin] = useState("")
+  const [account,setAccount] = useState("")
 
-  async function loadProposals() {
+  useEffect(()=>{
+    load()
+    const t = setInterval(load, 5000)
+    return ()=>clearInterval(t)
+  },[])
 
-    try {
+  async function load(){
 
-      const contract = await getContract()
-      const count = await contract.proposalCount()
+    const contract = await getEVoteContract()
 
-      let list = []
+    const signer = await contract.runner.getAddress()
+    setAccount(signer.toLowerCase())
 
-      for (let i = 1; i <= Number(count); i++) {
+    const adminAddr = await contract.admin()
+    setAdmin(adminAddr.toLowerCase())
 
-        const p = await contract.getProposal(i)
+    const count = Number(await contract.proposalCount())
+    const now = Math.floor(Date.now()/1000)
 
-        list.push({
-          id: i,
-          title: p[1],
-          description: p[2],
-          amount: ethers.formatEther(p[3]),
-          recipient: p[4],
-          yesVotes: p[5].toString(),
-          noVotes: p[6].toString(),
-          deadline: Number(p[7]),
-          finalized: p[8]
-        })
-      }
+    const list = []
 
-      setProposals(list)
+    for(let i=1;i<=count;i++){
 
-    } catch (err) {
+      const p = await contract.getProposal(i)
 
-      console.error("Error loading proposals:", err)
+      const creator = p[9] != null && p[9] !== undefined
+        ? String(p[9]).toLowerCase()
+        : ""
+
+      const deadline = Number(p[7])
+      const finalized = p[8]
+      const votingOpen = !finalized && now < deadline
+
+      const reported = p[10] ?? false
+      const reportCount = Number(p[11] ?? 0)
+
+      const cancelled = await contract.cancelled(i)
+      const cancelReason = await contract.cancelReason(i)
+
+      list.unshift({
+        id:Number(p[0]),
+        title:p[1],
+        description:p[2],
+        amount:p[3],
+        recipient:p[4],
+        yes:Number(p[5]),
+        no:Number(p[6]),
+        deadline,
+        finalized,
+        creator,
+        votingOpen,
+        reported,
+        reportCount,
+        cancelled,
+        cancelReason
+      })
 
     }
 
+    setProposals(list)
+
   }
 
-  async function vote() {
+  async function vote(id, value, title){
 
-    if (!proposalId) {
-      alert("Please enter proposal ID")
+    if(account === admin){
+      alert("Admin không vote.")
       return
     }
 
-    setLoading(true)
+    const contract = await getEVoteContract()
 
-    try {
+    const tx = await contract.vote(id,value)
+    await tx.wait()
 
-      const contract = await getContract()
+    const signer = await contract.runner.getAddress()
+    await recordVoteFull(id, signer, value, title)
 
-      const signer = await contract.runner.getAddress()
+    load()
+  }
 
-      const hasVoted = await contract.hasVoted(proposalId, signer)
+  async function endVotingEarly(id){
 
-      if (hasVoted) {
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.endVotingEarly(id)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Lỗi")
+    }
 
-        alert("You already voted")
+  }
 
-        setLoading(false)
+  async function finalize(id){
 
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.finalizeProposal(id)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Finalize failed")
+    }
+
+  }
+
+  async function report(id){
+
+    const reason = prompt("Nhập lý do report:")
+    if(!reason) return
+
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.reportProposal(id, reason)
+      await tx.wait()
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Report failed")
+    }
+
+  }
+
+  async function viewReports(id){
+
+    try{
+      const contract = await getEVoteContract()
+      const data = await contract.getReports(id)
+
+      if(!data.length){
+        alert("Không có report")
         return
       }
 
-      const tx = await contract.vote(proposalId, support)
+      alert(
+        data.map(r => `${r.reporter}\n${r.reason}`).join("\n\n")
+      )
 
-      await tx.wait()
-
-      alert(`Voted ${support ? "YES" : "NO"} on proposal #${proposalId}`)
-
-      await loadProposals()
-
-      setProposalId("")
-
-    } catch (err) {
-
+    }catch(err){
       console.error(err)
-
-      alert("Vote failed: " + (err.reason || err.message))
-
+      alert("Không lấy được report")
     }
-
-    setLoading(false)
 
   }
 
-  // vote trực tiếp từ danh sách proposal
-  async function voteDirect(id, support) {
+  async function cancel(id){
 
-    try {
+    const reason = prompt("Nhập lý do huỷ proposal:")
+    if(!reason) return
 
-      const contract = await getContract()
-
-      const tx = await contract.vote(id, support)
-
+    try{
+      const contract = await getEVoteContract()
+      const tx = await contract.cancelProposal(id, reason)
       await tx.wait()
-
-      alert(`Voted ${support ? "YES" : "NO"} on proposal #${id}`)
-
-      loadProposals()
-
-    } catch (err) {
-
-      alert(err.reason || err.message)
-
+      load()
+    }catch(err){
+      console.error(err)
+      alert(err?.reason || err?.shortMessage || "Cancel failed")
     }
 
   }
 
-  useEffect(() => {
-
-    loadProposals()
-
-    if (window.ethereum) {
-
-      window.ethereum.request({ method: "eth_accounts" })
-
-        .then(accounts => {
-
-          if (accounts.length > 0) setAccount(accounts[0])
-
-        })
-
-    }
-
-  }, [])
-
-  const now = Math.floor(Date.now() / 1000)
-
-  const activeProposals = proposals.filter(p => !p.finalized && p.deadline > now)
-
-  return (
-
-    <div className="max-w-6xl mx-auto p-6">
-
-      <div className="flex justify-between items-center mb-8">
-
-        <h1 className="text-3xl font-bold">Vote on Proposals</h1>
-
-        <WalletButton account={account} setAccount={setAccount} />
-
-      </div>
-
-
-      {/* vote bằng ID */}
-      <div className="bg-gray-800 p-6 rounded-lg mb-8">
-
-        <h2 className="text-xl font-bold mb-4">Cast Your Vote</h2>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-
-          <input
-            type="number"
-            placeholder="Proposal ID"
-            className="bg-gray-700 p-3 rounded"
-            value={proposalId}
-            onChange={(e) => setProposalId(e.target.value)}
-          />
-
-          <div className="flex gap-4 items-center">
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={support === true}
-                onChange={() => setSupport(true)}
-              />
-              YES
-            </label>
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={support === false}
-                onChange={() => setSupport(false)}
-              />
-              NO
-            </label>
-
-          </div>
-
-        </div>
-
-        <button
-          onClick={vote}
-          disabled={loading || !account}
-          className="bg-blue-600 p-3 rounded w-full"
-        >
-
-          {loading ? "Voting..." : "Submit Vote"}
-
-        </button>
-
-      </div>
-
-
-      {/* Active Proposals */}
-
-      <h2 className="text-2xl font-bold mb-4">
-
-        Active Proposals
-
-      </h2>
-
-
-      <div className="space-y-4">
-
-        {activeProposals.map(p => (
-
-          <div
-            key={p.id}
-            className="bg-gray-800 p-5 rounded-lg border border-gray-700"
-          >
-
-            <h3 className="text-xl font-bold">
-
-              #{p.id} {p.title}
-
-            </h3>
-
-            <p className="text-gray-400 mt-2">
-
-              {p.description}
-
-            </p>
-
-            <div className="mt-3 text-sm">
-
-              <p> YES: {p.yesVotes}</p>
-
-              <p> NO: {p.noVotes}</p>
-
-              <p>
-
-                Deadline:
-
-                {new Date(p.deadline * 1000).toLocaleString()}
-
-              </p>
-
-            </div>
-
-            <div className="flex gap-3 mt-4">
-
-              <button
-                onClick={() => voteDirect(p.id, true)}
-                className="bg-green-500 px-3 py-1 rounded"
-              >
-
-                Vote YES
-
-              </button>
-
-              <button
-                onClick={() => voteDirect(p.id, false)}
-                className="bg-red-500 px-3 py-1 rounded"
-              >
-
-                Vote NO
-
-              </button>
-
-            </div>
-
-          </div>
-
-        ))}
-
-        {activeProposals.length === 0 && (
-
-          <p className="text-gray-500 text-center py-8">
-
-            No active proposals
-
-          </p>
-
-        )}
+  return(
+
+    <div className="w-full max-w-none text-white">
+
+      <h1 className="mb-8 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+        Vote
+      </h1>
+
+      <div className="mx-auto w-full max-w-4xl space-y-6">
+
+        {proposals.map(p=>{
+
+          const total = p.yes + p.no
+          const yesPercent = total ? ((p.yes/total)*100).toFixed(1) : 0
+          const noPercent = total ? ((p.no/total)*100).toFixed(1) : 0
+
+          const isAdmin = account === admin
+          const canVote = !isAdmin && account && p.votingOpen && !p.cancelled
+
+          const deadlineText = new Date(p.deadline*1000).toLocaleString()
+
+          const w = normalizeWalletKey(account)
+          const canEndEarly = Boolean(
+            p.creator &&
+            w &&
+            w === p.creator &&
+            p.votingOpen
+          )
+
+          const votingEnded = !p.finalized && !p.votingOpen
+
+          return(
+
+            <article
+              key={p.id}
+              className="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/40 shadow-lg"
+            >
+
+              <div className="border-b border-slate-800/80 px-6 py-5">
+                <p className="text-xs font-medium text-slate-500">#{p.id}</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">{p.title}</h2>
+                <p className="mt-2 text-sm text-slate-400">{p.description}</p>
+              </div>
+
+              <div className="space-y-2 px-6 py-4 text-sm">
+                <p>
+                  <span className="text-slate-500">Người nhận:</span>{" "}
+                  <span className="font-mono text-slate-200">
+                    {formatHiddenAddress(p.recipient)}
+                  </span>
+                </p>
+
+                <p>
+                  <span className="text-slate-500">Số tiền:</span>{" "}
+                  <span className="text-slate-200">
+                    {ethers.formatEther(p.amount)} ETH
+                  </span>
+                </p>
+
+                <p>
+                  <span className="text-slate-500">Hạn:</span>{" "}
+                  <span className="text-slate-200">{deadlineText}</span>
+                </p>
+
+                <p>
+                  <span className="text-slate-500">YES / NO:</span>{" "}
+                  <span className="text-emerald-300">{p.yes}</span>
+                  {" / "}
+                  <span className="text-rose-300">{p.no}</span>
+                  <span className="text-slate-500">
+                    ({yesPercent}% / {noPercent}%)
+                  </span>
+                </p>
+
+                {p.reportCount > 0 && (
+                  <p className="text-sm font-medium text-rose-400">
+                    ⚠️ Proposal đang bị report ({p.reportCount})
+                  </p>
+                )}
+
+                {p.cancelled && (
+                  <p className="text-sm font-medium text-red-400">
+                    ❌ Đã huỷ: {p.cancelReason}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3 border-t border-slate-800/60 px-6 py-4">
+
+                {/* FINALIZED → NO ACTIONS */}
+                {p.finalized ? (
+                  <p className="text-sm font-medium text-emerald-400">
+                    Đã finalize.
+                  </p>
+                ) : (
+                  <>
+                    {canEndEarly && (
+                      <button
+                        onClick={()=>endVotingEarly(p.id)}
+                        className="rounded-xl border border-slate-500 bg-slate-800/80 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+                      >
+                        Kết thúc vote sớm
+                      </button>
+                    )}
+
+                    {canVote && (
+                      <>
+                        <button
+                          onClick={()=>vote(p.id,true,p.title)}
+                          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+                        >
+                          Vote YES
+                        </button>
+
+                        <button
+                          onClick={()=>vote(p.id,false,p.title)}
+                          className="rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-500"
+                        >
+                          Vote NO
+                        </button>
+                      </>
+                    )}
+
+                    {!isAdmin && !p.cancelled && (
+                      <button
+                        onClick={()=>report(p.id)}
+                        className="rounded-xl border border-rose-500 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/20"
+                      >
+                        Report ({p.reportCount})
+                      </button>
+                    )}
+
+                    {isAdmin && p.reportCount > 0 && !p.cancelled && (
+                      <>
+                        <button
+                          onClick={()=>viewReports(p.id)}
+                          className="rounded-xl bg-yellow-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-yellow-500"
+                        >
+                          Xem report
+                        </button>
+
+                        <button
+                          onClick={()=>cancel(p.id)}
+                          className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                        >
+                          Huỷ proposal
+                        </button>
+                      </>
+                    )}
+
+                    {isAdmin && votingEnded && !p.cancelled && (
+                      <button
+                        onClick={()=>finalize(p.id)}
+                        className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
+                      >
+                        Finalize → Multisig
+                      </button>
+                    )}
+                  </>
+                )}
+
+              </div>
+
+            </article>
+
+          )
+
+        })}
 
       </div>
 

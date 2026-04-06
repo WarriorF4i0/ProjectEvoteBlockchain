@@ -1,46 +1,131 @@
+/* eslint-disable react-hooks/immutability */
+import { useEffect, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
+import { ADMIN_ADDRESS } from "../config/admin"
 
-export default function Sidebar() {
+export default function Sidebar(){
 
   const location = useLocation()
 
+  const [isAdmin,setIsAdmin] = useState(false)
+
+  useEffect(()=>{
+
+    checkWallet()
+
+    function onWalletChanged(){
+      checkWallet()
+    }
+
+    window.addEventListener("walletChanged", onWalletChanged)
+
+    if(window.ethereum){
+      window.ethereum.on("accountsChanged", checkWallet)
+    }
+
+    return ()=>{
+      window.removeEventListener("walletChanged", onWalletChanged)
+      if(window.ethereum){
+        window.ethereum.removeListener("accountsChanged", checkWallet)
+      }
+    }
+
+  },[])
+
+  async function checkWallet(){
+
+    if(!window.ethereum){
+      setIsAdmin(false)
+      return
+    }
+
+    const accounts = await window.ethereum.request({
+      method:"eth_accounts"
+    })
+
+    if(accounts.length>0){
+
+      if(accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()){
+        setIsAdmin(true)
+      }else{
+        setIsAdmin(false)
+      }
+
+    }else{
+      setIsAdmin(false)
+    }
+
+  }
+
   const menu = [
-    { name: "Dashboard", path: "/" },
-    { name: "Create Transaction", path: "/create" },
-    { name: "Transaction History", path: "/history" },
-    { name: "Multisig Wallet", path: "/multisig" },
-    { name: "Profile", path: "/profile" },
-    { name: "Vote", path: "/vote" }
+
+    { name:"Dashboard", path:"/" },
+    { name:"Vote", path:"/vote" },
+    { name:"Multisig", path:"/multisig" },
+    { name:"Lịch sử", path:"/history" },
+
   ]
 
-  return (
-    <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+  if(!isAdmin){
+    menu.splice(3, 0, { name:"Tạo proposal", path:"/create" })
+  }
 
-      <div className="p-6 text-xl font-bold text-white border-b border-slate-800">
-        Blockchain dApp
+  menu.push({ name:"Profile", path:"/profile" })
+
+  return(
+
+    <aside className="relative z-40 flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-slate-800/90 bg-slate-900/95 sm:w-60">
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-emerald-500/10 to-transparent" />
+
+      <div className="relative flex flex-col p-5">
+
+        <Link to="/" className="mb-8 flex items-center gap-3">
+
+          <img
+            src="./evote.jpg"
+            alt="E-Vote DAO"
+            className="w-full aspect-[16/9] object-cover rounded-xl"
+          />
+
+        </Link>
+
+        {/* <Link to="/" className="mb-8 block"> <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90"> E‑Vote </p> <h1 className="text-xl font-bold tracking-tight text-white"> DAO </h1> </Link><Link to="/" className="mb-8 block"> <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90"> E‑Vote </p> <h1 className="text-xl font-bold tracking-tight text-white"> DAO </h1> </Link> */}
+
+        <nav className="flex flex-col gap-1">
+          {menu.map((item)=>{
+
+            const active = location.pathname === item.path
+
+            return(
+
+              <Link key={item.path} to={item.path}>
+
+                <span
+                  className={`
+                    block rounded-xl px-4 py-3 text-sm font-medium transition
+                    ${active
+                      ? "bg-gradient-to-r from-emerald-600/90 to-teal-600/80 text-white shadow-md shadow-emerald-900/20"
+                      : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+                    }
+                  `}
+                >
+
+                  {item.name}
+
+                </span>
+
+              </Link>
+
+            )
+
+          })}
+        </nav>
+
       </div>
 
-      <div className="flex flex-col p-3 gap-2">
+    </aside>
 
-        {menu.map((item) => (
-
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`p-3 rounded-lg transition border-l-4
-            ${
-              location.pathname === item.path
-                ? "border-blue-500 bg-blue-600 text-white font-bold text-lg"
-                : "border-transparent text-gray-400 hover:bg-slate-800 hover:text-emerald-400 focus:text-emerald-400"
-            }`}
-          > 
-            {item.name}
-          </Link>
-
-        ))}
-
-      </div>
-
-    </div>
   )
+
 }

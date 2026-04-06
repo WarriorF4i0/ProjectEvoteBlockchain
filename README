@@ -1,0 +1,3 @@
+Chạy constract Multisig.sol trên remix sau đó copy constract address nó gắn vào src/config/multisig.js
+Sau đó compile EVoteDAO.sol trên remix rồi gắn address multisig vừa deploy vào khung address của EVoteDAo rồi deploy
+Deploy xong copy constract address bỏ vào src/config/evote.js
